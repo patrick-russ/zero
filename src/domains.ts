@@ -4,15 +4,22 @@
  */
 
 const WILDCARD_PREFIX = '*.'
+// Labels zero uses for preview deployments (`preview-<label>.<primary>`). Wildcards never match them, so a
+// destroyed preview does not fall through to the production app and its leftover certificate is not renewed.
+const PREVIEW_LABEL_PREFIX = 'preview-'
 
 export function isWildcardDomain(domain: string): boolean {
   return domain.startsWith(WILDCARD_PREFIX)
 }
 
-/** The wildcard pattern a host would match, e.g. `a.example.com` → `*.example.com`; null for single-label hosts. */
+/**
+ * The wildcard pattern a host would match, e.g. `a.example.com` → `*.example.com`; null for single-label
+ * hosts and for hosts in the preview label space (`preview-*`), which wildcards never cover.
+ */
 export function wildcardFor(host: string): string | null {
   const dot = host.indexOf('.')
   if (dot <= 0 || dot === host.length - 1) return null
+  if (host.startsWith(PREVIEW_LABEL_PREFIX)) return null
   return `${WILDCARD_PREFIX}${host.slice(dot + 1)}`
 }
 

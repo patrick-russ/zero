@@ -157,6 +157,8 @@ describe('wildcard routes', () => {
     expect(res.status).toBe(200)
     expect(res.body).toBe('host=pssc1.tables.local')
     expect((await makeRequest(proxyPort, 'a.b.tables.local')).status).toBe(502)
+    // A destroyed preview does not fall through to the production app.
+    expect((await makeRequest(proxyPort, 'preview-pr-1.tables.local')).status).toBe(502)
 
     removeProxyRoute('*.tables.local')
     proxy.close()

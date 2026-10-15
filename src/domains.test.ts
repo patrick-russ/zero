@@ -13,6 +13,12 @@ describe('wildcard domains', () => {
     expect(wildcardFor('localhost')).toBeNull()
   })
 
+  it('never covers the preview label space', () => {
+    expect(wildcardFor('preview-pr-12.example.com')).toBeNull()
+    expect(matchesWildcard('preview-pr-12.example.com', '*.example.com')).toBe(false)
+    expect(matchesWildcard('mypreview.example.com', '*.example.com')).toBe(true)
+  })
+
   it('matches exactly one extra label', () => {
     expect(matchesWildcard('a.example.com', '*.example.com')).toBe(true)
     expect(matchesWildcard('example.com', '*.example.com')).toBe(false)

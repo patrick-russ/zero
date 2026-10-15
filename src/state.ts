@@ -267,6 +267,12 @@ export function removeDomain(appName: string, domain: string): void {
   if (idx === -1) {
     throw new Error(`Domain "${domain}" not found on app "${appName}"`)
   }
+  const nextPrimary = idx === 0 ? app.domains[1] : undefined
+  if (nextPrimary && isWildcardDomain(nextPrimary)) {
+    throw new Error(
+      `Cannot remove the primary domain "${domain}": the wildcard "${nextPrimary}" would become primary. Remove the wildcard first and add it again afterwards`
+    )
+  }
 
   app.domains.splice(idx, 1)
   saveState()

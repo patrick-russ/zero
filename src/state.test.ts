@@ -531,6 +531,15 @@ describe('state', () => {
       expect(() => state.addDomain('app', 'a.*.app.com')).toThrow('Invalid wildcard domain')
     })
 
+    it('removeDomain refuses to promote a wildcard to primary', () => {
+      state.addApp({ name: 'app', image: 'nginx', trackTag: 'latest', internalPort: 80, env: {}, domains: ['app.com'] })
+      state.addDomain('app', '*.app.com')
+      expect(() => state.removeDomain('app', 'app.com')).toThrow('would become primary')
+      expect(state.getApp('app')!.domains).toEqual(['app.com', '*.app.com'])
+      state.removeDomain('app', '*.app.com')
+      expect(state.getApp('app')!.domains).toEqual(['app.com'])
+    })
+
     it('addDomain throws for non-existent app', () => {
       expect(() => state.addDomain('nope', 'x.com')).toThrow('not found')
     })

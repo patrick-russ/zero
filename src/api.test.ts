@@ -1189,6 +1189,25 @@ describe('API', () => {
       expect(res.status).toBe(400)
     })
 
+    it('rejects a malformed or wildcard primary domain', async () => {
+      const malformed = await request('POST', '/deploy', {
+        image: 'nginx:latest',
+        name: 'badwild',
+        domain: 'a.*.example.com'
+      })
+      expect(malformed.status).toBe(400)
+      expect((malformed.body as { error: string }).error).toContain('Invalid wildcard domain')
+      const wildcard = await request('POST', '/deploy', {
+        image: 'nginx:latest',
+        name: 'wildprimary',
+        domain: '*.example.com'
+      })
+      expect(wildcard.status).toBe(400)
+      expect((wildcard.body as { error: string }).error).toContain('cannot be the primary domain')
+      expect(state.getApp('badwild')).toBeUndefined()
+      expect(state.getApp('wildprimary')).toBeUndefined()
+    })
+
     it('returns 404 for unknown app name without image', async () => {
       const res = await request('POST', '/deploy', { name: 'doesnotexist' })
       expect(res.status).toBe(404)
@@ -1289,6 +1308,15 @@ describe('API', () => {
       const res = await request('DELETE', '/apps/domrm/domains/extra.com')
       expect(res.status).toBe(200)
       expect(state.getApp('domrm')!.domains).toEqual(['remove.com'])
+    })
+
+    it('DELETE /apps/:name/domains/:domain refuses to promote a wildcard to primary', async () => {
+      addTestApp({ name: 'domwild', domain: 'wild.com' })
+      state.addDomain('domwild', '*.wild.com')
+      const res = await request('DELETE', '/apps/domwild/domains/wild.com')
+      expect(res.status).toBe(400)
+      expect((res.body as { error: string }).error).toContain('would become primary')
+      expect(state.getApp('domwild')!.domains).toEqual(['wild.com', '*.wild.com'])
     })
 
     it('DELETE /apps/:name/domains/:domain returns 404 for unknown domain', async () => {

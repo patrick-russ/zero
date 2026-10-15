@@ -81,7 +81,12 @@ route('DELETE', '/apps/:name/domains/:domain', async (_req, res, { name, domain 
     return
   }
 
-  removeDomain(name, domain)
+  try {
+    removeDomain(name, domain)
+  } catch (err) {
+    json(res, 400, { error: getErrorMessage(err) })
+    return
+  }
   removeProxyRoute(domain)
 
   if (app.domains.length === 0 && !app.hostPort) {
