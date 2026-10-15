@@ -76,14 +76,18 @@ export function managedDomains(apps: Array<{ domains: string[] }>, hostDomain: s
   return hostDomain ? [hostDomain, ...appDomains] : appDomains
 }
 
-/** Hosts with a certificate on disk that a wildcard covers (issued on demand earlier). */
+/**
+ * Hosts with a certificate on disk that a wildcard covers (issued on demand earlier). Preview domains
+ * (`preview-<label>.<primary>`) can fall under a wildcard on the primary domain; their certificates stay
+ * on disk after the preview is gone and are never renewed, so they are left out here as well.
+ */
 export function onDemandHosts(wildcard: string): string[] {
   if (!fs.existsSync(CERTS_DIR)) return []
   return fs
     .readdirSync(CERTS_DIR)
     .filter((file) => file.endsWith('.crt'))
     .map((file) => file.slice(0, -'.crt'.length))
-    .filter((host) => matchesWildcard(host, wildcard))
+    .filter((host) => matchesWildcard(host, wildcard) && !host.startsWith('preview-'))
 }
 
 export async function renewExpiringCerts(

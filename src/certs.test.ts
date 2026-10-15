@@ -133,6 +133,7 @@ describe('on-demand certificates under a wildcard', () => {
     writeCert('b.example.com')
     writeCert('deep.a.example.com')
     writeCert('other.org')
+    writeCert('preview-pr-1.example.com')
     expect(certs.onDemandHosts('*.example.com').sort()).toEqual(['a.example.com', 'b.example.com'])
   })
 
