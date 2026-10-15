@@ -253,6 +253,8 @@ zero domain add myapp '*.myapp.com'         # a.myapp.com, b.myapp.com, ... → 
   `a.b.myapp.com` do not. An exact domain of any app wins over a wildcard.
 - A wildcard cannot be an app's primary domain (the first one): deploy with a regular domain, then add the wildcard.
 - Point a wildcard DNS record (`*.myapp.com`) at the server.
+- Preview domains (`preview-<label>.myapp.com`) keep working: they are exact routes, so they win over the wildcard
+  and get their certificates the usual way, without the approval check below.
 - Each host gets its own Let's Encrypt certificate during its first TLS handshake (on-demand TLS, HTTP-01), which
   is renewed like any other. That first request waits a few seconds for the certificate.
 
