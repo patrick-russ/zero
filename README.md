@@ -240,6 +240,34 @@ zero domain remove myapp staging.myapp.com  # remove a domain
 
 The `--domain` flag on `zero deploy` sets the initial domain when creating an app. Use `zero domain add` for additional domains.
 
+#### Wildcard domains
+
+A wildcard domain routes every host one label below it to the app, so the app can tell them apart by the `Host`
+header (multi-tenant apps, per-customer subdomains):
+
+```bash
+zero domain add myapp '*.myapp.com'         # a.myapp.com, b.myapp.com, ... → myapp
+```
+
+- Exactly one label deep, like DNS and certificate wildcards: `a.myapp.com` matches, `myapp.com` and
+  `a.b.myapp.com` do not. An exact domain of any app wins over a wildcard.
+- A wildcard cannot be an app's primary domain (the first one): deploy with a regular domain, then add the wildcard.
+  Removing the primary domain is refused while a wildcard would take its place.
+- Point a wildcard DNS record (`*.myapp.com`) at the server.
+- The `preview-` label space belongs to [preview deployments](#preview-deployments): a wildcard never matches
+  `preview-*` hosts. Live previews keep working as before, and a destroyed preview's address is not routed to the
+  production app.
+- Each host gets its own Let's Encrypt certificate during its first TLS handshake (on-demand TLS, HTTP-01), which
+  is renewed like any other. That first request waits a few seconds for the certificate.
+
+Since anyone can point a name under the wildcard at the server, on-demand issuance is guarded: at most
+`ON_DEMAND_TLS_PER_HOUR` new certificates per hour, no retry within an hour for a host that failed, and, if
+`ON_DEMAND_TLS_ASK` is set, only hosts that endpoint approves. zero calls `GET <ON_DEMAND_TLS_ASK>?domain=<host>`:
+`2xx` issues (or renews) the certificate, `4xx` denies it. If the endpoint cannot decide (timeout, network error,
+`5xx`), the host is tried again after a minute and a due renewal on the next renewal run. Setting it is strongly
+recommended: without it, random names under the wildcard can use up the Let's Encrypt limit of 50 certificates per
+week for the domain.
+
 ### Deployment history
 
 zero keeps the last 10 deployments per app for rollback. Older deployments — and their container images — are removed automatically to keep disk usage in check.
@@ -380,6 +408,8 @@ Configuration is stored in `/opt/zero/.env`:
 | `PROXY_REQUEST_TIMEOUT`  | Reverse proxy request timeout (e.g. `60s`, `5m`) | `5m`         |
 | `PROXY_HEADERS_TIMEOUT`  | Reverse proxy headers timeout                    | `30s`        |
 | `PROXY_WS_IDLE_TIMEOUT`  | WebSocket idle timeout                           | `30m`        |
+| `ON_DEMAND_TLS_ASK`      | URL that approves on-demand certificates for wildcard hosts (`?domain=<host>`, 2xx = yes, 4xx = no) | — |
+| `ON_DEMAND_TLS_PER_HOUR` | Maximum new on-demand certificates per hour      | `20`         |
 
 ### Upgrade
 
@@ -394,7 +424,7 @@ Or re-run the install script on the server.
 
 zero provisions and renews TLS certificates via Let's Encrypt automatically when `EMAIL` is set and `DOMAIN` is a
 real domain (not an IP). Certificates are provisioned on first deploy and renewed within 30 days of expiry. HTTP
-requests are redirected to HTTPS.
+requests are redirected to HTTPS. Hosts under a [wildcard domain](#wildcard-domains) get their certificates on demand.
 
 ### Uninstall
 

@@ -37,6 +37,7 @@ export async function domain(
     default:
       printCommandHelp('zero domain <subcommand> <app> [domain]', undefined, [
         'zero domain add myapp staging.example.com',
+        "zero domain add myapp '*.example.com'",
         'zero domain remove myapp staging.example.com',
         'zero domain list myapp'
       ])

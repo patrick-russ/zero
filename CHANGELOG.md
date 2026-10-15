@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com), and this 
 
 ## [Unreleased]
 
+### Added
+
+- **Wildcard domains** — `zero domain add myapp '*.myapp.com'` routes every host one label below the wildcard to the app (an exact domain still wins). Each host gets its own Let's Encrypt certificate on its first TLS handshake (on-demand TLS over HTTP-01) and renews like any other certificate
+  - On-demand issuance is guarded: optional approval endpoint `ON_DEMAND_TLS_ASK` (`GET <url>?domain=<host>`, 2xx = issue, 4xx = deny, anything else = retry in a minute), at most `ON_DEMAND_TLS_PER_HOUR` (default 20) new certificates per hour, and no retry within an hour for a host that failed or was denied
+  - Exact domains always win and renew without the approval check, even below a wildcard; `preview-*` hosts are never covered by a wildcard
+  - A wildcard cannot be an app's primary domain, not on deploy and not by removing the primary domain, and malformed wildcards (`*.com`, `a.*.myapp.com`) are rejected
+
 ## [v2026.7.9]
 
 ### Added

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { isWildcardDomain, validateDomain } from './domains.ts'
 import { STATE_PATH } from './env.ts'
 import { ensureParentDir, writeFileAtomic } from './fs.ts'
 
@@ -243,6 +244,12 @@ export function addDomain(appName: string, domain: string): void {
   const app = _state.apps[appName]
   if (!app) throw new Error(`App "${appName}" not found`)
 
+  validateDomain(domain)
+  // The first domain is the primary one (app URL, preview subdomains), which a wildcard cannot be.
+  if (isWildcardDomain(domain) && app.domains.length === 0) {
+    throw new Error(`A wildcard domain cannot be the primary domain of "${appName}": add a regular domain first`)
+  }
+
   const conflict = getApps().find((a) => a.domains.includes(domain))
   if (conflict) {
     throw new Error(`Domain "${domain}" is already used by app "${conflict.name}"`)
@@ -259,6 +266,12 @@ export function removeDomain(appName: string, domain: string): void {
   const idx = app.domains.indexOf(domain)
   if (idx === -1) {
     throw new Error(`Domain "${domain}" not found on app "${appName}"`)
+  }
+  const nextPrimary = idx === 0 ? app.domains[1] : undefined
+  if (nextPrimary && isWildcardDomain(nextPrimary)) {
+    throw new Error(
+      `Cannot remove the primary domain "${domain}": the wildcard "${nextPrimary}" would become primary. Remove the wildcard first and add it again afterwards`
+    )
   }
 
   app.domains.splice(idx, 1)

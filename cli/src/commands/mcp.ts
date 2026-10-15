@@ -220,10 +220,10 @@ function registerTools(server: McpServer, client: Client): void {
     {
       title: 'Add a domain to an app',
       description:
-        "Add a domain to an existing app. If the server has TLS enabled and EMAIL is configured, a certificate is provisioned automatically in the background. Requires confirm=true.",
+        "Add a domain to an existing app. If the server has TLS enabled and EMAIL is configured, a certificate is provisioned automatically in the background. A wildcard (\"*.example.com\") routes every host one label below it to the app; those hosts get their certificates on their first TLS handshake. A wildcard cannot be the app's first domain. Requires confirm=true.",
       inputSchema: {
         name: z.string().describe('App name'),
-        domain: z.string().describe('Domain to add (e.g. "api.example.com")'),
+        domain: z.string().describe('Domain to add (e.g. "api.example.com" or "*.example.com")'),
         confirm: confirmField
       },
       annotations: mutating
