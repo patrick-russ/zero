@@ -252,17 +252,21 @@ zero domain add myapp '*.myapp.com'         # a.myapp.com, b.myapp.com, ... → 
 - Exactly one label deep, like DNS and certificate wildcards: `a.myapp.com` matches, `myapp.com` and
   `a.b.myapp.com` do not. An exact domain of any app wins over a wildcard.
 - A wildcard cannot be an app's primary domain (the first one): deploy with a regular domain, then add the wildcard.
+  Removing the primary domain is refused while a wildcard would take its place.
 - Point a wildcard DNS record (`*.myapp.com`) at the server.
-- Preview domains (`preview-<label>.myapp.com`) keep working: they are exact routes, so they win over the wildcard
-  and get their certificates the usual way, without the approval check below.
+- The `preview-` label space belongs to [preview deployments](#preview-deployments): a wildcard never matches
+  `preview-*` hosts. Live previews keep working as before, and a destroyed preview's address is not routed to the
+  production app.
 - Each host gets its own Let's Encrypt certificate during its first TLS handshake (on-demand TLS, HTTP-01), which
   is renewed like any other. That first request waits a few seconds for the certificate.
 
 Since anyone can point a name under the wildcard at the server, on-demand issuance is guarded: at most
 `ON_DEMAND_TLS_PER_HOUR` new certificates per hour, no retry within an hour for a host that failed, and, if
-`ON_DEMAND_TLS_ASK` is set, only hosts that endpoint approves. zero calls `GET <ON_DEMAND_TLS_ASK>?domain=<host>`
-and issues (or renews) the certificate only on a `2xx` answer. Setting it is strongly recommended: without it,
-random names under the wildcard can use up the Let's Encrypt limit of 50 certificates per week for the domain.
+`ON_DEMAND_TLS_ASK` is set, only hosts that endpoint approves. zero calls `GET <ON_DEMAND_TLS_ASK>?domain=<host>`:
+`2xx` issues (or renews) the certificate, `4xx` denies it. If the endpoint cannot decide (timeout, network error,
+`5xx`), the host is tried again after a minute and a due renewal on the next renewal run. Setting it is strongly
+recommended: without it, random names under the wildcard can use up the Let's Encrypt limit of 50 certificates per
+week for the domain.
 
 ### Deployment history
 
@@ -404,7 +408,7 @@ Configuration is stored in `/opt/zero/.env`:
 | `PROXY_REQUEST_TIMEOUT`  | Reverse proxy request timeout (e.g. `60s`, `5m`) | `5m`         |
 | `PROXY_HEADERS_TIMEOUT`  | Reverse proxy headers timeout                    | `30s`        |
 | `PROXY_WS_IDLE_TIMEOUT`  | WebSocket idle timeout                           | `30m`        |
-| `ON_DEMAND_TLS_ASK`      | URL that approves on-demand certificates for wildcard hosts (`?domain=<host>`, 2xx = yes) | — |
+| `ON_DEMAND_TLS_ASK`      | URL that approves on-demand certificates for wildcard hosts (`?domain=<host>`, 2xx = yes, 4xx = no) | — |
 | `ON_DEMAND_TLS_PER_HOUR` | Maximum new on-demand certificates per hour      | `20`         |
 
 ### Upgrade
