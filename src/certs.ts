@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import tls from 'node:tls'
 import * as acme from 'acme-client'
-import { CERT_RENEW_BEFORE_DAYS, CERTS_DIR, EMAIL, IS_DEV } from './env.ts'
+import { isWildcardDomain, matchesWildcard } from './domains.ts'
+import { CERT_RENEW_BEFORE_DAYS, CERTS_DIR, EMAIL, IS_DEV, ON_DEMAND_TLS_ASK, ON_DEMAND_TLS_PER_HOUR } from './env.ts'
 import { getErrorMessage } from './errors.ts'
 import { ensureDir, writeFileAtomic } from './fs.ts'
 import { isTLSEnabled } from './url.ts'
@@ -75,18 +76,36 @@ export function managedDomains(apps: Array<{ domains: string[] }>, hostDomain: s
   return hostDomain ? [hostDomain, ...appDomains] : appDomains
 }
 
+/** Hosts with a certificate on disk that a wildcard covers (issued on demand earlier). */
+export function onDemandHosts(wildcard: string): string[] {
+  if (!fs.existsSync(CERTS_DIR)) return []
+  return fs
+    .readdirSync(CERTS_DIR)
+    .filter((file) => file.endsWith('.crt'))
+    .map((file) => file.slice(0, -'.crt'.length))
+    .filter((host) => matchesWildcard(host, wildcard))
+}
+
 export async function renewExpiringCerts(
   domains: string[],
   renew: (domain: string) => Promise<tls.SecureContext> = obtainCert,
-  now = Date.now()
+  now = Date.now(),
+  ask: (host: string) => Promise<boolean> = askOnDemand
 ): Promise<string[]> {
   if (!isTLSEnabled()) return []
 
-  const uniqueDomains = [...new Set(domains.filter(Boolean))]
+  // A wildcard has no certificate of its own: renew the hosts issued under it instead.
+  const onDemand = new Set(domains.filter(isWildcardDomain).flatMap(onDemandHosts))
+  const uniqueDomains = [...new Set([...domains.filter((d) => d && !isWildcardDomain(d)), ...onDemand])]
   const renewed: string[] = []
 
   for (const domain of uniqueDomains) {
     if (!shouldRenewCert(domain, now)) continue
+    // A host the ask endpoint no longer approves keeps its certificate until it expires.
+    if (onDemand.has(domain) && !(await ask(domain))) {
+      console.log(`[acme] not renewing ${domain}: no longer approved by ON_DEMAND_TLS_ASK`)
+      continue
+    }
 
     console.log(`[acme] renewing cert for ${domain}`)
     try {
@@ -113,6 +132,86 @@ export function obtainCert(domain: string): Promise<tls.SecureContext> {
     () => certInFlight.delete(domain)
   )
   return promise
+}
+
+const ON_DEMAND_RETRY_AFTER_MS = 60 * 60 * 1000
+const ON_DEMAND_ASK_TIMEOUT_MS = 5000
+const onDemandIssued: number[] = []
+const onDemandFailedAt = new Map<string, number>()
+const onDemandInFlight = new Map<string, Promise<tls.SecureContext>>()
+
+/**
+ * Asks ON_DEMAND_TLS_ASK whether a host may get a certificate (`GET <url>?domain=<host>`, 2xx = yes).
+ * Without an ask URL every host under the wildcard is allowed.
+ */
+export async function askOnDemand(host: string): Promise<boolean> {
+  if (!ON_DEMAND_TLS_ASK) return true
+  try {
+    const url = new URL(ON_DEMAND_TLS_ASK)
+    url.searchParams.set('domain', host)
+    const res = await fetch(url, { signal: AbortSignal.timeout(ON_DEMAND_ASK_TIMEOUT_MS) })
+    return res.ok
+  } catch (err) {
+    console.warn(`[acme] ON_DEMAND_TLS_ASK failed for ${host}:`, getErrorMessage(err))
+    return false
+  }
+}
+
+/**
+ * Certificate for a host that is only routed through a wildcard, issued during its first TLS handshake.
+ * Anyone can point a name under a wildcard DNS record at the server, so issuance is guarded: the optional
+ * ask endpoint must approve the host, at most ON_DEMAND_TLS_PER_HOUR new certificates are issued per hour,
+ * and a host whose issuance failed is not retried for an hour (protects the Let's Encrypt rate limits).
+ */
+export function obtainOnDemandCert(
+  host: string,
+  issue: (domain: string) => Promise<tls.SecureContext> = obtainCert,
+  ask: (host: string) => Promise<boolean> = askOnDemand,
+  now = Date.now()
+): Promise<tls.SecureContext> {
+  // Concurrent handshakes for a new host share one issuance (and count once against the limit).
+  const inFlight = onDemandInFlight.get(host)
+  if (inFlight) return inFlight
+  const promise = issueOnDemand(host, issue, ask, now)
+  onDemandInFlight.set(host, promise)
+  promise.then(
+    () => onDemandInFlight.delete(host),
+    () => onDemandInFlight.delete(host)
+  )
+  return promise
+}
+
+async function issueOnDemand(
+  host: string,
+  issue: (domain: string) => Promise<tls.SecureContext>,
+  ask: (host: string) => Promise<boolean>,
+  now: number
+): Promise<tls.SecureContext> {
+  const failedAt = onDemandFailedAt.get(host)
+  if (failedAt !== undefined && now - failedAt < ON_DEMAND_RETRY_AFTER_MS) {
+    throw new Error(`On-demand certificate for ${host} failed recently, retrying later`)
+  }
+  if (!(await ask(host))) {
+    onDemandFailedAt.set(host, now)
+    throw new Error(`On-demand certificate for ${host} not approved by ON_DEMAND_TLS_ASK`)
+  }
+  while (onDemandIssued.length > 0 && now - onDemandIssued[0]! >= ON_DEMAND_RETRY_AFTER_MS) onDemandIssued.shift()
+  if (onDemandIssued.length >= ON_DEMAND_TLS_PER_HOUR) {
+    throw new Error(`On-demand certificate limit reached (${ON_DEMAND_TLS_PER_HOUR}/hour), not issuing for ${host}`)
+  }
+  onDemandIssued.push(now)
+  try {
+    return await issue(host)
+  } catch (err) {
+    onDemandFailedAt.set(host, now)
+    throw err
+  }
+}
+
+/** Test helper: forget issued and failed on-demand hosts. */
+export function resetOnDemandState(): void {
+  onDemandIssued.length = 0
+  onDemandFailedAt.clear()
 }
 
 let _acmeClient: acme.Client | null = null

@@ -18,6 +18,7 @@ import {
   rollback
 } from '../deploy.ts'
 import { removeContainer, startContainer, stopContainer, streamLogs, streamStats, waitForHealthy } from '../docker.ts'
+import { isWildcardDomain } from '../domains.ts'
 import { parseDuration } from '../duration.ts'
 import { DOMAIN, PREVIEW_TTL_MS } from '../env.ts'
 import { destroyPreview } from '../preview.ts'
@@ -177,6 +178,13 @@ route('POST', '/deploy', async (req, res) => {
       : parseImageRef(body.image!)
 
     const domain = body.domain ?? (!body.hostPort && hasDomain() ? `${appName}.${DOMAIN}` : undefined)
+    if (domain && isWildcardDomain(domain)) {
+      json(res, 400, {
+        error:
+          'A wildcard domain cannot be the primary domain: deploy with a regular domain, then use `zero domain add`'
+      })
+      return
+    }
     const domains = domain ? [domain] : []
 
     app = addApp({

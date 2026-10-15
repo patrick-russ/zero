@@ -12,6 +12,9 @@ export const STATE_PATH = process.env.STATE_PATH ?? (IS_DEV ? '.zero/state.json'
 export const CERTS_DIR = process.env.CERTS_PATH ?? (IS_DEV ? '.zero/certs' : '/var/lib/zero/certs')
 export const CERT_RENEW_BEFORE_DAYS = Number(process.env.CERT_RENEW_BEFORE_DAYS ?? 30)
 export const CERT_RENEW_INTERVAL_MS = Number(process.env.CERT_RENEW_INTERVAL_MS ?? 12 * 60 * 60 * 1000)
+// On-demand certificates for hosts under a wildcard domain (*.example.com)
+export const ON_DEMAND_TLS_ASK = process.env.ON_DEMAND_TLS_ASK ?? ''
+export const ON_DEMAND_TLS_PER_HOUR = Number(process.env.ON_DEMAND_TLS_PER_HOUR ?? 20)
 export const COMPOSE_BASE_DIR = process.env.COMPOSE_DIR ?? (IS_DEV ? '.zero/compose' : '/var/lib/zero/compose')
 
 function safeParseDuration(name: string, value: string, fallback: string): number {

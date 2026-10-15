@@ -1,7 +1,8 @@
 import http from 'node:http'
 import net from 'node:net'
 import tls from 'node:tls'
-import { getCachedCert, handleAcmeChallenge, loadCachedCert, obtainCert } from './certs.ts'
+import { getCachedCert, handleAcmeChallenge, loadCachedCert, obtainCert, obtainOnDemandCert } from './certs.ts'
+import { isWildcardDomain, wildcardFor } from './domains.ts'
 import {
   API_PORT,
   DEV_PORT,
@@ -51,8 +52,23 @@ function trackConnectionsPerIp(server: net.Server | tls.Server): void {
 
 const routes = new Map<string, number>()
 
+/** Port for a host: an exact domain wins over a wildcard (`*.example.com`) covering it. */
+export function resolveRoute(host: string): number | undefined {
+  const exact = routes.get(host)
+  if (exact !== undefined) return exact
+  const wildcard = wildcardFor(host)
+  return wildcard ? routes.get(wildcard) : undefined
+}
+
 export function hasProxyRoute(domain: string): boolean {
-  return routes.has(domain)
+  return resolveRoute(domain) !== undefined
+}
+
+/** True when the host is only routed through a wildcard, so its certificate is issued on demand. */
+export function isOnDemandHost(host: string): boolean {
+  if (routes.has(host)) return false
+  const wildcard = wildcardFor(host)
+  return wildcard !== null && routes.has(wildcard)
 }
 
 export function updateProxyRoute(domain: string, port: number) {
@@ -156,7 +172,7 @@ function forwardTo(req: http.IncomingMessage, res: http.ServerResponse, targetPo
 
 function proxyRequest(req: http.IncomingMessage, res: http.ServerResponse) {
   const host = (req.headers.host ?? '').split(':')[0]
-  const port = routes.get(host)
+  const port = resolveRoute(host)
 
   if (!port) {
     const clientIp = req.socket.remoteAddress ?? ''
@@ -171,7 +187,7 @@ function proxyRequest(req: http.IncomingMessage, res: http.ServerResponse) {
 
 function proxyUpgrade(req: http.IncomingMessage, clientSocket: net.Socket, head: Buffer) {
   const host = (req.headers.host ?? '').split(':')[0]
-  const port = routes.get(host)
+  const port = resolveRoute(host)
 
   if (!port) {
     clientSocket.destroy()
@@ -281,7 +297,8 @@ export function startTLSProxy() {
         callback(new Error(`No EMAIL set, cannot obtain cert for ${domain}`))
         return
       }
-      obtainCert(domain)
+      const issue = isOnDemandHost(domain) ? obtainOnDemandCert : obtainCert
+      issue(domain)
         .then((ctx) => callback(null, ctx))
         .catch((err) => callback(err))
     }
@@ -349,7 +366,8 @@ export function restoreRoutes(
     if (app.domains.length > 0) {
       for (const domain of app.domains) {
         updateProxyRoute(domain, deployment.port)
-        loadCachedCert(domain)
+        // A wildcard has no certificate of its own; its hosts get theirs on demand.
+        if (!isWildcardDomain(domain)) loadCachedCert(domain)
       }
     } else if (app.hostPort) {
       updatePortRoute(app.hostPort, deployment.port)

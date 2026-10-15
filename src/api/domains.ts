@@ -1,5 +1,6 @@
 import { obtainCert } from '../certs.ts'
 import { getFreePort } from '../docker.ts'
+import { isWildcardDomain } from '../domains.ts'
 import { removePortRoute, removeProxyRoute, routeApp, updateProxyRoute } from '../proxy.ts'
 import {
   addDomain,
@@ -41,7 +42,8 @@ route('POST', '/apps/:name/domains', async (req, res, { name }) => {
     updateProxyRoute(body.domain, deployment.port)
   }
 
-  if (isTLSEnabled()) {
+  // Hosts under a wildcard get their certificates on demand during the TLS handshake.
+  if (isTLSEnabled() && !isWildcardDomain(body.domain)) {
     obtainCert(body.domain).catch((err) => {
       console.error(`[domains] Failed to obtain cert for ${body.domain}:`, err)
     })

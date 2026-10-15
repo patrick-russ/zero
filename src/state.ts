@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { isWildcardDomain, validateDomain } from './domains.ts'
 import { STATE_PATH } from './env.ts'
 import { ensureParentDir, writeFileAtomic } from './fs.ts'
 
@@ -242,6 +243,12 @@ export function findRollbackTarget(appName: string): Deployment {
 export function addDomain(appName: string, domain: string): void {
   const app = _state.apps[appName]
   if (!app) throw new Error(`App "${appName}" not found`)
+
+  validateDomain(domain)
+  // The first domain is the primary one (app URL, preview subdomains), which a wildcard cannot be.
+  if (isWildcardDomain(domain) && app.domains.length === 0) {
+    throw new Error(`A wildcard domain cannot be the primary domain of "${appName}": add a regular domain first`)
+  }
 
   const conflict = getApps().find((a) => a.domains.includes(domain))
   if (conflict) {
